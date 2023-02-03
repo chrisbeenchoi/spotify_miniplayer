@@ -1,0 +1,146 @@
+import spotipy
+import tkinter as tk
+from tkinter import ttk
+import urllib.request
+from PIL import ImageTk, Image
+from spotipy.oauth2 import SpotifyOAuth
+
+# https://developer.spotify.com/documentation/general/guides/authorization/scopes/
+scope = "user-library-read", "user-read-currently-playing", "streaming", "user-read-playback-position", "user-read-playback-state"
+sp = spotipy.Spotify(auth_manager=SpotifyOAuth(cache_path='Desktop/SIDEPROJECTS/spotify_miniplayer/.cache', scope=scope))
+window_width = 300
+cover_dimensions = (window_width, window_width)
+
+track_info = sp.currently_playing()
+cover_url = track_info['item']['album']['images'][0]['url']
+
+playback_info = sp.current_playback()
+shuffle_state = playback_info['shuffle_state']
+is_playing = playback_info['is_playing']
+repeat_state = playback_info['repeat_state']
+progress = playback_info['progress_ms'] / 1000
+duration = playback_info['item']['duration_ms'] / 1000
+playback_progress = (progress / duration) * 100
+x = 0
+y = 0
+
+def player_window():
+    window = tk.Tk()
+    window.title("")
+    window.geometry(str(window_width) + 'x' + str(window_width))
+
+    window.attributes('-type', 'splash')
+
+    # if you implement resizability, make sure to keep it square + adjust image/button sizes
+    window.resizable(False, False)
+    # window_width = window.winfo_width()
+
+    cover_frame = tk.Frame(window, width = window_width, height = window_width)
+    cover_frame.place(anchor = 'center', relx = 0.5, rely = 0.5)
+    cover_frame.pack()
+
+    # update this information when skip/prev buttons pressed, or playback position reaches end
+    # problem: will return None when nothing selected/paused for too long --> run a try/except/else thing or only update it when something happens (so that image stays despite timeout)
+    def update_url():
+        track_info = sp.currently_playing()
+        global cover_url
+        url = track_info['item']['album']['images'][0]['url']
+        if url != cover_url:
+            cover_url = url
+            update_cover()
+        window.after(1000, update_url)
+
+    def update_cover():
+        print(cover_url)
+        urllib.request.urlretrieve(cover_url, "cover.png")
+        global cover
+        cover = ImageTk.PhotoImage(Image.open("cover.png").resize(cover_dimensions))
+        label.config(image = cover)
+
+    global cover
+    cover = ImageTk.PhotoImage(Image.open("cover.png").resize(cover_dimensions))
+
+    global label
+    label = tk.Label(cover_frame, image = cover)
+    label.pack()
+
+    options_frame = tk.Frame(window, width = window_width, height = window_width/3, bg='gray9')
+    options_frame.place(x = 0, y = 200)
+
+    #def show_options(event):
+    #    options_frame.place(x = 0, y = 200)
+    #
+    #def hide_options(event):
+    #    options_frame.destroy()
+
+    # gray60/white for buttons. download spotify icon files somewhere to use for buttons
+    # separate method to toggle icon color based on mouse location
+
+    def shuffle():
+        global shuffle_state
+        shuffle_state = not shuffle_state
+        sp.shuffle(state=shuffle_state)
+        # update icon color
+    tk.Button(options_frame, pady = 5, text = "Shuf", border = 0, command = shuffle).place(x = window_width*(0.15), y = window_width/20, height = window_width/10, width = window_width/10)
+
+    def previous():
+        sp.previous_track()
+        global is_playing
+        is_playing = True
+        update_url(), update_progress()
+    tk.Button(options_frame, pady = 5, text = "Prev", border = 0, command = previous).place(x = window_width*(0.30), y = window_width/20, height = window_width/10, width = window_width/10)
+
+    def play_pause():
+        global is_playing
+        if is_playing:
+            sp.pause_playback()
+            # update button image
+        else:
+            sp.start_playback()
+            # update button image
+        is_playing = not is_playing
+    tk.Button(options_frame, pady = 5, text = "Play", border = 0, command = play_pause).place(x = window_width*(0.45), y = window_width/20, height = window_width/10, width = window_width/10)
+    
+    def next():
+        sp.next_track()
+        global is_playing
+        is_playing = True
+        update_url(), update_progress()
+    tk.Button(options_frame, pady = 5, text = "Next", border = 0, command = next).place(x = window_width*(0.60), y = window_width/20, height = window_width/10, width = window_width/10)
+
+    def repeat():
+        global repeat_state
+        if repeat_state == 'off':
+            repeat_state = 'context'
+        elif repeat_state == 'context':
+            repeat_state = 'track'
+        else:
+            repeat_state = 'off'
+        sp.repeat(state=repeat_state)
+    tk.Button(options_frame, pady = 5, text = "Rep", border = 0, command = repeat).place(x = window_width*(0.75), y = window_width/20, height = window_width/10, width = window_width/10)
+
+    progress_bar_style = ttk.Style()
+    progress_bar_style.theme_use('clam')
+    progress_bar_style.configure("green.Horizontal.TProgressbar", troughcolor='gray9', bordercolor='gray9', background='white', lightcolor='gray9', darkcolor='gray9')
+    progress_bar = ttk.Progressbar(options_frame, orient='horizontal', length=0.7*window_width, mode='determinate', value=20, style="green.Horizontal.TProgressbar")
+    progress_bar.place(x = window_width*(0.15), y = window_width/5)
+
+    def update_progress():
+        global progress, duration, playback_progress
+        playback_info = sp.current_playback()
+        progress = playback_info['progress_ms'] / 1000
+        duration = playback_info['item']['duration_ms'] / 1000
+        playback_progress = (progress / duration) * 100
+        progress_bar.config(value=playback_progress)
+        window.after(1000, update_progress)
+
+    window.after(1, update_url)
+    window.after(1, update_cover)
+    window.after(1, update_progress)
+
+    #window.bind("<Enter>", show_options)
+    #window.bind("<Exit>", hide_options)
+
+    window.mainloop()
+
+player_window()
